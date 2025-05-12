@@ -16,9 +16,12 @@
   <h3>掃描結果</h3>
   <div id="result">尚未掃描</div>
 
+  <script type="module" src="./node_modules/xlsx/xlsx.mjs"></script>
+  <script type="module" src="./node_modules/@zxing/browser/esm/index.js"></script>
+
   <script type="module">
-    import { BrowserMultiFormatReader } from './node_modules/@zxing/browser/esm/index.js';
-    import * as XLSX from './node_modules/xlsx/xlsx.mjs';
+    // import { BrowserMultiFormatReader } from './node_modules/@zxing/browser/esm/index.js';
+    // import * as XLSX from './node_modules/xlsx/xlsx.mjs';
 
     const reader = new BrowserMultiFormatReader();
     const resultDiv = document.getElementById("result");
