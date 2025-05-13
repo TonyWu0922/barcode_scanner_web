@@ -3,14 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>條碼掃描器（強化版）</title>
+  <title>條碼掃描器（可再次掃描）</title>
 </head>
 <body>
   <h2>上傳商品資料 (Excel)</h2>
   <input type="file" id="excelFile" accept=".xlsx" />
 
   <h2>掃描條碼</h2>
-  <button id="startBtn">啟動鏡頭</button>
+  <button id="scanBtn">📷 開始掃描</button>
+  <button id="rescanBtn" disabled>🔄 再次掃描</button>
   <video id="video" width="640" height="480" style="border: 1px solid gray;"></video>
 
   <h3>掃描結果</h3>
@@ -25,14 +26,15 @@
 
     const reader = new BrowserMultiFormatReader();
     const formats = [ BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.CODE_128, BarcodeFormat.UPC_A ];
-
-    const resultDiv = document.getElementById("result");
+    
     const videoElement = document.getElementById("video");
-    const startBtn = document.getElementById("startBtn");
+    const resultDiv = document.getElementById("result");
+    const scanBtn = document.getElementById("scanBtn");
+    const rescanBtn = document.getElementById("rescanBtn");
 
-    let productData = {}; // 條碼 => 商品資料
+    let productData = {}; // 條碼 => 商品資訊對應表
 
-    // Excel 處理
+    // 上傳 Excel
     document.getElementById('excelFile').addEventListener('change', (e) => {
       const file = e.target.files[0];
       const reader = new FileReader();
@@ -59,10 +61,11 @@
       reader.readAsArrayBuffer(file);
     });
 
-    // 掃描條碼
-    async function startScanner() {
+    // 掃描流程
+    async function scanOnce() {
       resultDiv.textContent = '📷 掃描中...';
-      startBtn.disabled = true;
+      scanBtn.disabled = true;
+      rescanBtn.disabled = true;
 
       try {
         const result = await reader.decodeOnceFromVideoDevice(
@@ -72,7 +75,7 @@
         );
 
         const scannedCode = result.getText().trim();
-        const formattedCode = scannedCode.padStart(13, '0'); // EAN-13 比對補零
+        const formattedCode = scannedCode.padStart(13, '0'); // 補零對齊 EAN-13
 
         const product = productData[formattedCode] || {
           itemNumber: "❌ 找不到品號",
@@ -81,13 +84,15 @@
 
         resultDiv.textContent = `條碼：${scannedCode}\n品號：${product.itemNumber}\n品名：${product.itemName}`;
       } catch (err) {
-        resultDiv.textContent = `⚠️ 掃描錯誤或取消：${err}`;
+        resultDiv.textContent = `⚠️ 掃描失敗或取消：${err}`;
       } finally {
-        startBtn.disabled = false;
+        reader.reset(); // 停止相機和掃描器
+        rescanBtn.disabled = false;
       }
     }
 
-    startBtn.addEventListener("click", startScanner);
+    scanBtn.addEventListener("click", scanOnce);
+    rescanBtn.addEventListener("click", scanOnce);
   </script>
 </body>
 </html>
