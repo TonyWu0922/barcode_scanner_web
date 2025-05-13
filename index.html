@@ -1,117 +1,102 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
-
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>條碼掃描器（可再次掃描）</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>條碼掃描器（html5-qrcode 版）</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
 </head>
-
 <body>
-    <h2>上傳商品資料 (Excel)</h2>
-    <input type="file" id="excelFile" accept=".xlsx" />
+  <h2>上傳商品資料 (Excel)</h2>
+  <input type="file" id="excelFile" accept=".xlsx" />
 
-    <h2>掃描條碼</h2>
-    <button id="scanBtn">📷 開始掃描</button>
-    <button id="rescanBtn" disabled>🔄 再次掃描</button>
-    <video id="video" width="640" height="480" style="border: 1px solid gray;"></video>
+  <h2>掃描條碼</h2>
+  <button id="scanBtn">📷 開始掃描</button>
+  <button id="rescanBtn" disabled>🔄 再次掃描</button>
+  <div id="scanner" style="width: 300px; height: 300px;"></div>
 
-    <h3>掃描結果</h3>
-    <pre id="result">尚未掃描</pre>
+  <h3>掃描結果</h3>
+  <pre id="result">尚未掃描</pre>
 
-    <script type="module">
-        import {
-            BrowserMultiFormatReader,
-            BarcodeFormat
-        } from 'https://cdn.jsdelivr.net/npm/@zxing/browser@0.0.10/+esm';
-        import * as XLSX from 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm';
+  <script type="module">
+    import * as XLSX from 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm';
 
-        const reader = new BrowserMultiFormatReader();
-        const formats = [BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.CODE_128, BarcodeFormat.UPC_A];
+    const scanBtn = document.getElementById("scanBtn");
+    const rescanBtn = document.getElementById("rescanBtn");
+    const resultDiv = document.getElementById("result");
+    const scannerDiv = document.getElementById("scanner");
 
-        const videoElement = document.getElementById("video");
-        const resultDiv = document.getElementById("result");
-        const scanBtn = document.getElementById("scanBtn");
-        const rescanBtn = document.getElementById("rescanBtn");
+    let productData = {}; // 條碼 => 商品資料
+    let html5QrCode = null;
 
-        let productData = {}; // 條碼 => 商品資訊對應表
+    // 上傳 Excel
+    document.getElementById('excelFile').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const data = new Uint8Array(event.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet);
 
-        // 上傳 Excel
-        document.getElementById('excelFile').addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const data = new Uint8Array(event.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
-                const sheet = workbook.Sheets[workbook.SheetNames[0]];
-                const json = XLSX.utils.sheet_to_json(sheet);
-
-                let count = 0;
-                json.forEach(item => {
-                    const code = item['條碼編號']?.toString()?.trim();
-                    if (code && item['品號'] && item['品名']) {
-                        productData[code] = {
-                            itemNumber: item['品號'],
-                            itemName: item['品名']
-                        };
-                        count++;
-                    }
-                });
-
-                alert(`✅ 已載入 ${count} 筆商品資料`);
+        let count = 0;
+        json.forEach(item => {
+          const code = item['條碼編號']?.toString()?.trim();
+          if (code && item['品號'] && item['品名']) {
+            productData[code] = {
+              itemNumber: item['品號'],
+              itemName: item['品名']
             };
-            reader.readAsArrayBuffer(file);
+            count++;
+          }
         });
 
-        // 掃描流程
-        async function scanOnce() {
-            resultDiv.textContent = '📷 掃描中...';
-            scanBtn.disabled = true;
-            rescanBtn.disabled = true;
+        alert(`✅ 已載入 ${count} 筆商品資料`);
+      };
+      reader.readAsArrayBuffer(file);
+    });
 
-            try {
-                // 嘗試用後鏡頭（不強制 exact）
-                await reader.decodeOnceFromVideoDevice(
-                    { facingMode: "environment" },
-                    videoElement,
-                    { formats }
-                ).then(handleResult);
-            } catch (error) {
-                console.warn("⚠️ 使用後鏡頭失敗，嘗試預設攝影機", error);
+    // 掃描並比對條碼
+    async function startScan() {
+      resultDiv.textContent = '📷 掃描中...';
+      scanBtn.disabled = true;
+      rescanBtn.disabled = true;
 
-                // fallback：改用預設攝影機
-                try {
-                    await reader.decodeOnceFromVideoDevice(
-                        null,
-                        videoElement,
-                        { formats }
-                    ).then(handleResult);
-                } catch (fallbackError) {
-                    resultDiv.textContent = `🚫 無法啟用任何攝影機：${fallbackError.message}`;
-                    return;
-                }
-            } finally {
-                reader.reset();
-                rescanBtn.disabled = false;
-            }
-        }
+      if (!html5QrCode) {
+        html5QrCode = new Html5Qrcode("scanner");
+      }
 
-        // 結果處理
-        function handleResult(result) {
-            const scannedCode = result.getText().trim();
+      try {
+        await html5QrCode.start(
+          { facingMode: "environment" },
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 }
+          },
+          (decodedText, decodedResult) => {
+            const scannedCode = decodedText.trim();
             const formattedCode = scannedCode.padStart(13, '0');
-
             const product = productData[formattedCode] || {
-                itemNumber: "❌ 找不到品號",
-                itemName: "❌ 找不到品名"
+              itemNumber: "❌ 找不到品號",
+              itemName: "❌ 找不到品名"
             };
 
             resultDiv.textContent = `條碼：${scannedCode}\n品號：${product.itemNumber}\n品名：${product.itemName}`;
-        }
+            html5QrCode.stop(); // 掃到就停止
+            rescanBtn.disabled = false;
+          },
+          (errorMessage) => {
+            // 錯誤忽略（可視情況顯示）
+          }
+        );
+      } catch (err) {
+        resultDiv.textContent = `🚫 無法啟動相機：${err.message}`;
+        scanBtn.disabled = false;
+      }
+    }
 
-        scanBtn.addEventListener("click", scanOnce);
-        rescanBtn.addEventListener("click", scanOnce);
-    </script>
+    scanBtn.addEventListener("click", startScan);
+    rescanBtn.addEventListener("click", startScan);
+  </script>
 </body>
-
 </html>
