@@ -17,15 +17,28 @@
   <div id="result">尚未掃描</div>
 
   <script type="module">
-    import { BrowserMultiFormatReader } from 'https://cdn.jsdelivr.net/npm/@zxing/browser@0.0.10/+esm';
+    import {
+      BrowserMultiFormatReader,
+      BarcodeFormat
+    } from 'https://cdn.jsdelivr.net/npm/@zxing/browser@0.0.10/+esm';
     import * as XLSX from 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm';
 
     const reader = new BrowserMultiFormatReader();
+
+    // 指定支援的條碼格式
+    const formats = [
+      BarcodeFormat.EAN_13,
+      BarcodeFormat.EAN_8,
+      BarcodeFormat.CODE_128,
+      BarcodeFormat.UPC_A,
+      BarcodeFormat.QR_CODE
+    ];
+
     const resultDiv = document.getElementById("result");
     const videoElement = document.getElementById("video");
+    let productData = {}; // barcode -> item number and name
 
-    let productData = {}; // barcode -> name
-
+    // Excel 檔案上傳處理
     document.getElementById('excelFile').addEventListener('change', (e) => {
       const file = e.target.files[0];
       const fileReader = new FileReader();
@@ -35,13 +48,17 @@
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const json = XLSX.utils.sheet_to_json(sheet);
 
+        // 將 Excel 資料轉成 barcode => item number and name 的對照表
         json.forEach(item => {
-          if (item.barcode && item.name) {
-            productData[item.barcode] = item.name;
+          if (item['條碼編號'] && item['品號'] && item['品名']) {
+            productData[item['條碼編號'].toString()] = {
+              itemNumber: item['品號'],
+              itemName: item['品名']
+            };
           }
         });
 
-        alert(`已載入 ${Object.keys(productData).length} 筆商品資料`);
+        alert(`✅ 已載入 ${Object.keys(productData).length} 筆商品資料`);
       };
       fileReader.readAsArrayBuffer(file);
     });
@@ -50,13 +67,13 @@
       reader.decodeFromVideoDevice(null, videoElement, (result, err) => {
         if (result) {
           const barcode = result.getText();
-          const name = productData[barcode] || "❌ 找不到商品資料";
-          resultDiv.textContent = `條碼：${barcode}\n商品：${name}`;
+          const product = productData[barcode] || { itemNumber: "❌ 找不到品號", itemName: "❌ 找不到品名" };
+          resultDiv.textContent = `條碼：${barcode}\n品號：${product.itemNumber}\n品名：${product.itemName}`;
         }
-      });
+      }, { formats }); // 設定要支援的格式
     }
 
-    // 一定要綁定到 window 才能在 onclick 使用
+    // 綁定到全域 scope
     window.startScanner = startScanner;
   </script>
 </body>
