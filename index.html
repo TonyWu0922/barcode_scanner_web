@@ -3,100 +3,102 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>條碼掃描器（html5-qrcode 版）</title>
-  <script src="https://unpkg.com/html5-qrcode"></script>
+  <title>OCR 條碼辨識器</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 </head>
 <body>
   <h2>上傳商品資料 (Excel)</h2>
   <input type="file" id="excelFile" accept=".xlsx" />
 
-  <h2>掃描條碼</h2>
-  <button id="scanBtn">📷 開始掃描</button>
-  <button id="rescanBtn" disabled>🔄 再次掃描</button>
-  <div id="scanner" style="width: 300px; height: 300px;"></div>
+  <h2>文字辨識條碼數字 (OCR)</h2>
+  <button id="startOcrBtn">📸 啟動辨識</button>
+  <video id="video" autoplay muted playsinline style="display: none; width: 300px; height: auto; border: 1px solid gray;"></video>
+  <canvas id="canvas" style="display:none;"></canvas>
 
-  <h3>掃描結果</h3>
-  <pre id="result">尚未掃描</pre>
+  <h3>辨識結果</h3>
+  <pre id="result">尚未辨識</pre>
 
-  <script type="module">
-    import * as XLSX from 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm';
-
-    const scanBtn = document.getElementById("scanBtn");
-    const rescanBtn = document.getElementById("rescanBtn");
+  <script>
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
     const resultDiv = document.getElementById("result");
-    const scannerDiv = document.getElementById("scanner");
+    const startOcrBtn = document.getElementById("startOcrBtn");
 
-    let productData = {}; // 條碼 => 商品資料
-    let html5QrCode = null;
+    let productData = {};
 
-    // 上傳 Excel
-    document.getElementById('excelFile').addEventListener('change', (e) => {
+    // 上傳 Excel 資料
+    document.getElementById("excelFile").addEventListener("change", (e) => {
       const file = e.target.files[0];
       const reader = new FileReader();
       reader.onload = (event) => {
         const data = new Uint8Array(event.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
+        const workbook = XLSX.read(data, { type: "array" });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const json = XLSX.utils.sheet_to_json(sheet);
 
         let count = 0;
         json.forEach(item => {
-          const code = item['條碼編號']?.toString()?.trim();
-          if (code && item['品號'] && item['品名']) {
+          const code = item["條碼編號"]?.toString()?.trim();
+          if (code && item["品號"] && item["品名"]) {
             productData[code] = {
-              itemNumber: item['品號'],
-              itemName: item['品名']
+              itemNumber: item["品號"],
+              itemName: item["品名"]
             };
             count++;
           }
         });
-
         alert(`✅ 已載入 ${count} 筆商品資料`);
       };
       reader.readAsArrayBuffer(file);
     });
 
-    // 掃描並比對條碼
-    async function startScan() {
-      resultDiv.textContent = '📷 掃描中...';
-      scanBtn.disabled = true;
-      rescanBtn.disabled = true;
-
-      if (!html5QrCode) {
-        html5QrCode = new Html5Qrcode("scanner");
-      }
+    async function startOcrScan() {
+      resultDiv.textContent = "📷 開啟鏡頭中...";
+      startOcrBtn.disabled = true;
 
       try {
-        await html5QrCode.start(
-          { facingMode: "environment" },
-          {
-            fps: 10,
-            qrbox: { width: 250, height: 250 }
-          },
-          (decodedText, decodedResult) => {
-            const scannedCode = decodedText.trim();
-            const formattedCode = scannedCode.padStart(13, '0');
-            const product = productData[formattedCode] || {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        video.srcObject = stream;
+        video.style.display = "block";
+
+        // 等待對焦
+        setTimeout(async () => {
+          const context = canvas.getContext("2d");
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+          stream.getTracks().forEach(track => track.stop());
+          video.style.display = "none";
+
+          const dataUrl = canvas.toDataURL("image/png");
+
+          resultDiv.textContent = "🔍 正在進行文字辨識...";
+          const result = await Tesseract.recognize(dataUrl, "eng", {
+            tessedit_char_whitelist: "0123456789"
+          });
+
+          let text = result.data.text.replace(/\D/g, '').slice(-13); // 取最後13位數字
+          if (text.length === 13) {
+            const product = productData[text] || {
               itemNumber: "❌ 找不到品號",
               itemName: "❌ 找不到品名"
             };
-
-            resultDiv.textContent = `條碼：${scannedCode}\n品號：${product.itemNumber}\n品名：${product.itemName}`;
-            html5QrCode.stop(); // 掃到就停止
-            rescanBtn.disabled = false;
-          },
-          (errorMessage) => {
-            // 錯誤忽略（可視情況顯示）
+            resultDiv.textContent = `條碼：${text}\n品號：${product.itemNumber}\n品名：${product.itemName}`;
+          } else {
+            resultDiv.textContent = `🚫 辨識失敗，無法取得13碼條碼（取得內容：${text}）`;
           }
-        );
+
+          startOcrBtn.disabled = false;
+        }, 2500); // 等 2.5 秒對焦後拍照
       } catch (err) {
-        resultDiv.textContent = `🚫 無法啟動相機：${err.message}`;
-        scanBtn.disabled = false;
+        resultDiv.textContent = `🚫 鏡頭無法啟動：${err.message}`;
+        startOcrBtn.disabled = false;
       }
     }
 
-    scanBtn.addEventListener("click", startScan);
-    rescanBtn.addEventListener("click", startScan);
+    startOcrBtn.addEventListener("click", startOcrScan);
   </script>
 </body>
 </html>
