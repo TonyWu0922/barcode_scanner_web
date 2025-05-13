@@ -70,28 +70,25 @@
             rescanBtn.disabled = true;
 
             try {
-                // 嘗試用後鏡頭掃描
+                // 嘗試用後鏡頭（不強制 exact）
                 await reader.decodeOnceFromVideoDevice(
-                    { facingMode: { exact: "environment" } }, // 使用 exact 更明確指定
+                    { facingMode: "environment" },
                     videoElement,
                     { formats }
                 ).then(handleResult);
             } catch (error) {
-                if (error.name === "OverconstrainedError" || error.name === "NotFoundError") {
-                    console.warn("⚠️ 後鏡頭無法使用，改用預設相機");
+                console.warn("⚠️ 使用後鏡頭失敗，嘗試預設攝影機", error);
 
-                    // fallback：使用預設攝影機
-                    try {
-                        await reader.decodeOnceFromVideoDevice(
-                            null, // null 表示預設攝影機
-                            videoElement,
-                            { formats }
-                        ).then(handleResult);
-                    } catch (err) {
-                        resultDiv.textContent = `🚫 預設相機也無法使用：${err.message}`;
-                    }
-                } else {
-                    resultDiv.textContent = `🚫 錯誤：${error.message}`;
+                // fallback：改用預設攝影機
+                try {
+                    await reader.decodeOnceFromVideoDevice(
+                        null,
+                        videoElement,
+                        { formats }
+                    ).then(handleResult);
+                } catch (fallbackError) {
+                    resultDiv.textContent = `🚫 無法啟用任何攝影機：${fallbackError.message}`;
+                    return;
                 }
             } finally {
                 reader.reset();
