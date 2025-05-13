@@ -99,7 +99,9 @@
             tessedit_char_whitelist: "0123456789",
           });
 
-          const match = result.data.text.match(/\b\d{13}\b/); // 找出連續 13 碼
+          const matches = result.data.text.match(/\d{13}/g);
+
+          //const match = result.data.text.match(/\b\d{13}\b/); // 找出連續 13 碼
 
           if (match) {
             const code = match[0];
