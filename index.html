@@ -1,69 +1,63 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
-
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>條碼掃描器</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>條碼掃描器</title>
 </head>
-
 <body>
-    <h2>上傳商品資料 (Excel)</h2>
-    <input type="file" id="excelFile" accept=".xlsx" />
+  <h2>上傳商品資料 (Excel)</h2>
+  <input type="file" id="excelFile" accept=".xlsx" />
 
-    <h2>掃描條碼</h2>
-    <button onclick="startScanner()">啟動鏡頭</button>
-    <video id="video" width="300" height="200" style="border: 1px solid gray;"></video>
+  <h2>掃描條碼</h2>
+  <button onclick="startScanner()">啟動鏡頭</button>
+  <video id="video" width="300" height="200" style="border: 1px solid gray;"></video>
 
-    <h3>掃描結果</h3>
-    <div id="result">尚未掃描</div>
+  <h3>掃描結果</h3>
+  <div id="result">尚未掃描</div>
 
-    <script type="module">
-        // import { BrowserMultiFormatReader } from './node_modules/@zxing/browser/esm/index.js';
-        // import * as XLSX from './node_modules/xlsx/xlsx.mjs';
+  <script type="module">
+    import { BrowserMultiFormatReader } from 'https://cdn.jsdelivr.net/npm/@zxing/browser@0.0.10/+esm';
+    import * as XLSX from 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm';
 
-        import { BrowserMultiFormatReader } from 'https://unpkg.com/@zxing/browser@latest';
-        import * as XLSX from 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm';
+    const reader = new BrowserMultiFormatReader();
+    const resultDiv = document.getElementById("result");
+    const videoElement = document.getElementById("video");
 
-        const reader = new BrowserMultiFormatReader();
-        const resultDiv = document.getElementById("result");
-        const videoElement = document.getElementById("video");
+    let productData = {}; // barcode -> name
 
-        let productData = {}; // barcode -> name
+    document.getElementById('excelFile').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      const fileReader = new FileReader();
+      fileReader.onload = (event) => {
+        const data = new Uint8Array(event.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet);
 
-        // Excel 檔案上傳處理
-        document.getElementById('excelFile').addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const data = new Uint8Array(event.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
-                const sheet = workbook.Sheets[workbook.SheetNames[0]];
-                const json = XLSX.utils.sheet_to_json(sheet);
-
-                // 將 Excel 資料轉成 barcode => name 的對照表
-                json.forEach(item => {
-                    if (item.barcode && item.name) {
-                        productData[item.barcode] = item.name;
-                    }
-                });
-
-                alert(`已載入 ${Object.keys(productData).length} 筆商品資料`);
-            };
-            reader.readAsArrayBuffer(file);
+        json.forEach(item => {
+          if (item.barcode && item.name) {
+            productData[item.barcode] = item.name;
+          }
         });
 
-        // 啟動鏡頭掃描
-        function startScanner() {
-            reader.decodeFromVideoDevice(null, videoElement, (result, err) => {
-                if (result) {
-                    const barcode = result.getText();
-                    const name = productData[barcode] || "❌ 找不到商品資料";
-                    resultDiv.textContent = `條碼：${barcode}\n商品：${name}`;
-                }
-            });
-        }
-    </script>
-</body>
+        alert(`已載入 ${Object.keys(productData).length} 筆商品資料`);
+      };
+      fileReader.readAsArrayBuffer(file);
+    });
 
+    function startScanner() {
+      reader.decodeFromVideoDevice(null, videoElement, (result, err) => {
+        if (result) {
+          const barcode = result.getText();
+          const name = productData[barcode] || "❌ 找不到商品資料";
+          resultDiv.textContent = `條碼：${barcode}\n商品：${name}`;
+        }
+      });
+    }
+
+    // 一定要綁定到 window 才能在 onclick 使用
+    window.startScanner = startScanner;
+  </script>
+</body>
 </html>
