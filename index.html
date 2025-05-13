@@ -1,91 +1,126 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
-
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>OCR 條碼辨識器</title>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OCR 條碼辨識器</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 </head>
-
 <body>
-    <h2>上傳商品資料 (Excel)</h2>
-    <input type="file" id="excelFile" accept=".xlsx" />
+  <h2>上傳商品資料 (Excel)</h2>
+  <input type="file" id="excelFile" accept=".xlsx" />
 
-    <h2>文字辨識條碼數字 (OCR)</h2>
-    <button id="startOcrBtn">📸 啟動辨識</button>
-    <video id="video" autoplay muted playsinline
-        style="display: none; width: 300px; height: auto; border: 1px solid gray;"></video>
-    <canvas id="canvas" style="display:none;"></canvas>
+  <h2>文字辨識條碼數字 (OCR)</h2>
+  <button id="startOcrBtn">📸 啟動辨識</button>
+  <video id="video" autoplay muted playsinline style="display: none; width: 300px; height: auto; border: 1px solid gray;"></video>
+  <canvas id="canvas" style="display:none;"></canvas>
 
-    <h3>辨識結果</h3>
-    <pre id="result">尚未辨識</pre>
+  <h3>辨識結果</h3>
+  <pre id="result">尚未辨識</pre>
 
-    <script>
-        async function startOcrScan() {
-            resultDiv.textContent = "📷 開啟鏡頭中...";
-            startOcrBtn.disabled = true;
+  <script>
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const resultDiv = document.getElementById("result");
+    const startOcrBtn = document.getElementById("startOcrBtn");
 
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-                video.srcObject = stream;
-                video.style.display = "block";
+    let productData = {};
 
-                // 等待畫面穩定
-                setTimeout(async () => {
-                    const context = canvas.getContext("2d");
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    // 讀取 Excel
+    document.getElementById("excelFile").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const data = new Uint8Array(event.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet);
 
-                    // 只取中央底部區塊（條碼數字通常在底部）
-                    const cropHeight = 80; // 區塊高度
-                    const cropWidth = canvas.width * 0.8; // 寬度為畫面的 80%
-                    const cropX = (canvas.width - cropWidth) / 2;
-                    const cropY = canvas.height - cropHeight - 30; // 畫面底部上來一點
+        let count = 0;
+        json.forEach(item => {
+          const code = item["條碼編號"]?.toString()?.trim();
+          if (code && item["品號"] && item["品名"]) {
+            productData[code] = {
+              itemNumber: item["品號"],
+              itemName: item["品名"]
+            };
+            count++;
+          }
+        });
+        alert(`✅ 已載入 ${count} 筆商品資料`);
+      };
+      reader.readAsArrayBuffer(file);
+    });
 
-                    const imageData = context.getImageData(cropX, cropY, cropWidth, cropHeight);
-                    const tempCanvas = document.createElement("canvas");
-                    tempCanvas.width = cropWidth;
-                    tempCanvas.height = cropHeight;
-                    const tempCtx = tempCanvas.getContext("2d");
-                    tempCtx.putImageData(imageData, 0, 0);
+    async function startOcrScan() {
+      resultDiv.textContent = "📷 開啟鏡頭中...";
+      startOcrBtn.disabled = true;
 
-                    const dataUrl = tempCanvas.toDataURL("image/png");
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        video.srcObject = stream;
+        video.style.display = "block";
 
-                    stream.getTracks().forEach(track => track.stop());
-                    video.style.display = "none";
-                    resultDiv.textContent = "🔍 正在進行文字辨識...";
+        setTimeout(async () => {
+          if (!video.videoWidth || !video.videoHeight) {
+            resultDiv.textContent = "🚫 無法取得影像尺寸，請稍後再試。";
+            stream.getTracks().forEach(track => track.stop());
+            startOcrBtn.disabled = false;
+            return;
+          }
 
-                    const result = await Tesseract.recognize(dataUrl, "eng", {
-                        tessedit_char_whitelist: "0123456789",
-                    });
+          const context = canvas.getContext("2d");
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-                    const rawText = result.data.text.replace(/\D/g, "");
-                    const matches = rawText.match(/\d{13}/g); // 找出所有 13 碼數字
+          // 裁切底部中間的區域
+          const cropHeight = 80;
+          const cropWidth = canvas.width * 0.8;
+          const cropX = (canvas.width - cropWidth) / 2;
+          const cropY = canvas.height - cropHeight - 30;
 
-                    if (matches && matches.length > 0) {
-                        const code = matches[0];
-                        const product = productData[code] || {
-                            itemNumber: "❌ 找不到品號",
-                            itemName: "❌ 找不到品名"
-                        };
-                        resultDiv.textContent = `條碼：${code}\n品號：${product.itemNumber}\n品名：${product.itemName}`;
-                    } else {
-                        resultDiv.textContent = `🚫 無法辨識有效的 13 碼條碼（取得內容：${rawText}）`;
-                    }
+          const imageData = context.getImageData(cropX, cropY, cropWidth, cropHeight);
+          const tempCanvas = document.createElement("canvas");
+          tempCanvas.width = cropWidth;
+          tempCanvas.height = cropHeight;
+          const tempCtx = tempCanvas.getContext("2d");
+          tempCtx.putImageData(imageData, 0, 0);
 
-                    startOcrBtn.disabled = false;
-                }, 2500); // 等 2.5 秒對焦
-            } catch (err) {
-                resultDiv.textContent = `🚫 鏡頭無法啟動：${err.message}`;
-                startOcrBtn.disabled = false;
-            }
-        }
+          const dataUrl = tempCanvas.toDataURL("image/png");
 
-        startOcrBtn.addEventListener("click", startOcrScan);
-    </script>
+          stream.getTracks().forEach(track => track.stop());
+          video.style.display = "none";
+          resultDiv.textContent = "🔍 正在進行文字辨識...";
+
+          const result = await Tesseract.recognize(dataUrl, "eng", {
+            logger: m => console.log(m),
+            tessedit_char_whitelist: "0123456789",
+          });
+
+          const match = result.data.text.match(/\b\d{13}\b/); // 找出連續 13 碼
+
+          if (match) {
+            const code = match[0];
+            const product = productData[code] || {
+              itemNumber: "❌ 找不到品號",
+              itemName: "❌ 找不到品名"
+            };
+            resultDiv.textContent = `條碼：${code}\n品號：${product.itemNumber}\n品名：${product.itemName}`;
+          } else {
+            resultDiv.textContent = `🚫 未找到有效的 13 碼條碼\n🔎 OCR 結果：\n${result.data.text.trim()}`;
+          }
+
+          startOcrBtn.disabled = false;
+        }, 2500);
+      } catch (err) {
+        resultDiv.textContent = `🚫 鏡頭無法啟動：${err.message}`;
+        startOcrBtn.disabled = false;
+      }
+    }
+
+    startOcrBtn.addEventListener("click", startOcrScan);
+  </script>
 </body>
-
 </html>
