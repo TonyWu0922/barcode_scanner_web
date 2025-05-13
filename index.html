@@ -1,98 +1,120 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
+
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>條碼掃描器（可再次掃描）</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>條碼掃描器（可再次掃描）</title>
 </head>
+
 <body>
-  <h2>上傳商品資料 (Excel)</h2>
-  <input type="file" id="excelFile" accept=".xlsx" />
+    <h2>上傳商品資料 (Excel)</h2>
+    <input type="file" id="excelFile" accept=".xlsx" />
 
-  <h2>掃描條碼</h2>
-  <button id="scanBtn">📷 開始掃描</button>
-  <button id="rescanBtn" disabled>🔄 再次掃描</button>
-  <video id="video" width="640" height="480" style="border: 1px solid gray;"></video>
+    <h2>掃描條碼</h2>
+    <button id="scanBtn">📷 開始掃描</button>
+    <button id="rescanBtn" disabled>🔄 再次掃描</button>
+    <video id="video" width="640" height="480" style="border: 1px solid gray;"></video>
 
-  <h3>掃描結果</h3>
-  <pre id="result">尚未掃描</pre>
+    <h3>掃描結果</h3>
+    <pre id="result">尚未掃描</pre>
 
-  <script type="module">
-    import {
-      BrowserMultiFormatReader,
-      BarcodeFormat
-    } from 'https://cdn.jsdelivr.net/npm/@zxing/browser@0.0.10/+esm';
-    import * as XLSX from 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm';
+    <script type="module">
+        import {
+            BrowserMultiFormatReader,
+            BarcodeFormat
+        } from 'https://cdn.jsdelivr.net/npm/@zxing/browser@0.0.10/+esm';
+        import * as XLSX from 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm';
 
-    const reader = new BrowserMultiFormatReader();
-    const formats = [ BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.CODE_128, BarcodeFormat.UPC_A ];
-    
-    const videoElement = document.getElementById("video");
-    const resultDiv = document.getElementById("result");
-    const scanBtn = document.getElementById("scanBtn");
-    const rescanBtn = document.getElementById("rescanBtn");
+        const reader = new BrowserMultiFormatReader();
+        const formats = [BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.CODE_128, BarcodeFormat.UPC_A];
 
-    let productData = {}; // 條碼 => 商品資訊對應表
+        const videoElement = document.getElementById("video");
+        const resultDiv = document.getElementById("result");
+        const scanBtn = document.getElementById("scanBtn");
+        const rescanBtn = document.getElementById("rescanBtn");
 
-    // 上傳 Excel
-    document.getElementById('excelFile').addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const data = new Uint8Array(event.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(sheet);
+        let productData = {}; // 條碼 => 商品資訊對應表
 
-        let count = 0;
-        json.forEach(item => {
-          const code = item['條碼編號']?.toString()?.trim();
-          if (code && item['品號'] && item['品名']) {
-            productData[code] = {
-              itemNumber: item['品號'],
-              itemName: item['品名']
+        // 上傳 Excel
+        document.getElementById('excelFile').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const data = new Uint8Array(event.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                const json = XLSX.utils.sheet_to_json(sheet);
+
+                let count = 0;
+                json.forEach(item => {
+                    const code = item['條碼編號']?.toString()?.trim();
+                    if (code && item['品號'] && item['品名']) {
+                        productData[code] = {
+                            itemNumber: item['品號'],
+                            itemName: item['品名']
+                        };
+                        count++;
+                    }
+                });
+
+                alert(`✅ 已載入 ${count} 筆商品資料`);
             };
-            count++;
-          }
+            reader.readAsArrayBuffer(file);
         });
 
-        alert(`✅ 已載入 ${count} 筆商品資料`);
-      };
-      reader.readAsArrayBuffer(file);
-    });
+        // 掃描流程
+        async function scanOnce() {
+            resultDiv.textContent = '📷 掃描中...';
+            scanBtn.disabled = true;
+            rescanBtn.disabled = true;
 
-    // 掃描流程
-    async function scanOnce() {
-      resultDiv.textContent = '📷 掃描中...';
-      scanBtn.disabled = true;
-      rescanBtn.disabled = true;
+            try {
+                // 嘗試用後鏡頭掃描
+                await reader.decodeOnceFromVideoDevice(
+                    { facingMode: { exact: "environment" } }, // 使用 exact 更明確指定
+                    videoElement,
+                    { formats }
+                ).then(handleResult);
+            } catch (error) {
+                if (error.name === "OverconstrainedError" || error.name === "NotFoundError") {
+                    console.warn("⚠️ 後鏡頭無法使用，改用預設相機");
 
-      try {
-        const result = await reader.decodeOnceFromVideoDevice(
-          { facingMode: "environment" },
-          videoElement,
-          { formats }
-        );
+                    // fallback：使用預設攝影機
+                    try {
+                        await reader.decodeOnceFromVideoDevice(
+                            null, // null 表示預設攝影機
+                            videoElement,
+                            { formats }
+                        ).then(handleResult);
+                    } catch (err) {
+                        resultDiv.textContent = `🚫 預設相機也無法使用：${err.message}`;
+                    }
+                } else {
+                    resultDiv.textContent = `🚫 錯誤：${error.message}`;
+                }
+            } finally {
+                reader.reset();
+                rescanBtn.disabled = false;
+            }
+        }
 
-        const scannedCode = result.getText().trim();
-        const formattedCode = scannedCode.padStart(13, '0'); // 補零對齊 EAN-13
+        // 結果處理
+        function handleResult(result) {
+            const scannedCode = result.getText().trim();
+            const formattedCode = scannedCode.padStart(13, '0');
 
-        const product = productData[formattedCode] || {
-          itemNumber: "❌ 找不到品號",
-          itemName: "❌ 找不到品名"
-        };
+            const product = productData[formattedCode] || {
+                itemNumber: "❌ 找不到品號",
+                itemName: "❌ 找不到品名"
+            };
 
-        resultDiv.textContent = `條碼：${scannedCode}\n品號：${product.itemNumber}\n品名：${product.itemName}`;
-      } catch (err) {
-        resultDiv.textContent = `⚠️ 掃描失敗或取消：${err}`;
-      } finally {
-        reader.reset(); // 停止相機和掃描器
-        rescanBtn.disabled = false;
-      }
-    }
+            resultDiv.textContent = `條碼：${scannedCode}\n品號：${product.itemNumber}\n品名：${product.itemName}`;
+        }
 
-    scanBtn.addEventListener("click", scanOnce);
-    rescanBtn.addEventListener("click", scanOnce);
-  </script>
+        scanBtn.addEventListener("click", scanOnce);
+        rescanBtn.addEventListener("click", scanOnce);
+    </script>
 </body>
+
 </html>
